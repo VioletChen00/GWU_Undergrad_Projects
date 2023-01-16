@@ -1,0 +1,289 @@
+---
+title: "Friendship Patterns within Business Analytics Majors Report"
+author: 
+  - Group5
+  - Andrew Renga, Violet Chen, Jose Llamas, Chengzong Zhang, 
+  - Maria Urdaneta, Alejandra Taboada Donado
+date: "2022-12-21"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read el from excel, message=FALSE, warning=FALSE, include=FALSE}
+# read edge list & attribute data
+library(readxl)
+el <- read_excel("project_data.xlsx", sheet = "el", col_names = TRUE)
+attr <- read_excel("project_data.xlsx", sheet = "attr", col_names = TRUE)
+
+# convert edge list to igraph object g
+library(igraph)
+g <- igraph::graph.data.frame(el, directed = T)
+
+# matching attribute to igraph vertex
+df <- data.frame(V(g)$name, seq(1, vcount(g)))
+colnames(df) <- c("name", "origseq")
+
+# merge by sequence
+df <- merge(df,attr, by.x = "name", by.y = "full_name" )
+df <- df[order(df$origseq),]
+
+# add attribute data to igraph object g
+V(g)$name <- df$pseudonym
+V(g)$gender <- df$gender
+V(g)$if_intl <- df$if_international
+V(g)$grad_yr <- df$graduation_year
+V(g)$origin <- df$origin
+
+# assign shape and color
+V(g)$color <- ifelse(V(g)$gender == "Male", "lightblue","lightpink")
+V(g)$shape <- ifelse(V(g)$if_intl == "Domestic","square","circle")
+V(g)$label <- V(g)$name
+```
+
+# Introduction
+
+The project aims to analyze the friendship patterns between international students and domestic students within Business Analytics majors. Data are collected by interviewing and sending questionnaires, which includes friendship level (1 to 4 scale where 4 = best friends), citizenship, hometown, major, graduation year, and gender. The data are collected on an edge list and paired with the attribute data gathered through a Google form sent to 3 Business Analytics class. The findings are expected to show that international students are more likely to make connections with people from their home country while domestic students do not necessarily follow the same pattern. 
+
+This report will provide an in-depth analysis of the degree distribution, centralities, correlation of centralities, subgroups, roles, brokerage, and social capital within the network. Additionally, the report will include the statistical models (ERGM) and interpretations testing for homophily. However, it is important to note that not every student participated in the survey which could have resulted in a less accurate representation of the results. Therefore, it is important to consider the potential limitations of the survey when interpreting the results. 
+
+Additionally, the project will explore whether there is a relationship between a domestic student network and an international student network based on citizenship and if it is possible to predict the probability of a connection in a network based on organizations using a network based on majors. The results of this project could provide valuable insights into the dynamics of friendship formation among international and domestic students, and could be used to inform strategies for fostering a more inclusive and diverse learning environment. 
+
+A plot of network is shown below with color light pink as female, light blue as male and shape circle as domestic student,square as international student.
+
+```{r echo=FALSE, fig.align = 'center'}
+# Plot with attributes
+set.seed(5)
+plot(g,
+     vertex.color = V(g)$color,
+     vertex.shape = V(g)$shape,
+     vertex.label = V(g)$label,
+     vertex.size= 10, 
+     vertex.label.cex=0.5,
+     edge.arrow.size=.3)
+```
+
+```{r centrality prep, message=FALSE, warning=FALSE, include=FALSE}
+# Degree Distribution 
+distribution <- as.matrix(degree_distribution(g))
+
+# types of centralities network
+#degree centrality
+V(g)$degree <- degree(g)
+#Eigenvector centrality 
+V(g)$eig <- evcent(g)$vector
+#closeness centrality 
+V(g)$closeness <- closeness(g)
+#vertex betweeness centrality 
+V(g)$betweenness <- betweenness(g)
+
+centralityg <- data.frame(row.names = V(g)$name,
+                         degree = V(g)$degree,
+                         closeness = V(g)$closeness,
+                         betweenness = V(g)$betweenness,
+                         eigenvector = V(g)$eig)
+
+centralityg <- centralityg[order(row.names(centralityg)),]
+
+#correlation of centralities 
+cor_g <- data.frame(round(cor(centralityg), 2))
+```
+
+# Centralities
+
+```{r echo=FALSE, warning=FALSE, results='asis'}
+library(knitr)
+kable(head(centralityg[order(centralityg$betweenness, decreasing= T),], n = 10))
+```
+
+After plotting the network and analyzing its centralities, we conclude the following:   
+
+The first centrality analyzed is *Degree Distribution*. Degree distribution looks at the probability that a randomly chosen node has degree k. *Degree* is the count of edges a node has; in other words, when looking at the network, an edge exists between two nodes if there is a frequent association between the students represented by those nodes. The students with the highest degree are Alejandra Taboada and Violet with a degree of 8. This, essentially, means that Alejandra and Violet have 8 connections with other students across the three classes, making them the most “popular.”    
+
+We proceeded to compute the *closeness* centrality, which indicates how close a node is to all other nodes in the network. This centrality measures the mean distance from a vertex to other vertices, looking at the average of the shortest path length from the node to every other node in the network. In other words, this centrality measures the communication among networks. In the student network, student named LTB has the highest closeness centrality value at 0.5, meaning he is the best placed to influence the entire network quickly.    
+
+Moving on to *betweenness*: this metric computes the importance of nodes in a number of flow based networks. It is a measure of the extent to which a certain vertex lies on the shortest paths between other vertices. Vertices with high betweenness are considered to have considerable influence within a network. Student named Violet has the highest betweenness value at 129. This is expected because the same student scored very high for degree and is, therefore, popular, which means it has great influence within the network.    
+
+Then I looked at the *eigenvector* centrality, which measures actor influence or popularity: a high score means that an actor is connected to many nodes that also have high scores. When looking at the student network, student named Rex has the highest eigenvector centrality of 1.   
+
+```{r echo=FALSE, warning=FALSE, results='asis'}
+kable(cor_g)
+```
+
+These findings led us to correlate these centralities, and we see a high correlation of 0.68 between degree and betweenness for the student network. This makes much sense because the student with the highest degree is Violet, which is also the student with the highest degree centrality. This makes sense because there is overlap between having the most connections and being popular. 
+
+# Subgroup
+
+Observing subgroup allows us to study the relationship of social network, the individuals can be formed into groups. Since the community is a closely connected group, everyone will share friends more or less. Besides through an intermediary, two unrelated people can be connected together, Although such a connection may will not be too strong.    
+
+Based on our prediction, some people may connect to more than one person since they have differnet friendships. More links mean that they are centralized nodes in this social network. Subgroup allows us to see whether the relationship between the network is tight or sparse. Also if there is isolated communities which means it has no connection with other clusters. We predict that based on the collected data, the subgroup should show a strong correlation.    
+
+```{r include=FALSE}
+wt <- cluster_walktrap(g, steps=20)
+
+modularity(wt)
+
+B = modularity_matrix(g, membership(wt))
+round(B[1,],2)
+
+length(wt)
+
+crossing(wt, g)
+```
+
+```{r echo=FALSE}
+sizes(wt)
+```
+
+The network is classified into six clusters. The output above shows the number of people and the relationship of each cluster. The fifth cluster only has has two people. Most of the other clusters have similar sizes. The largest is the third cluster which has 11 people. We also calculated that the modularity of this community network is 0.69. According to the concept of modularity, this value should be between -1 and 1. Firstly, it proves that our social network is applicable. Secondly, this result is close to 1, which means that our community network are relatively strong.
+
+```{r echo=FALSE}
+#str(wt) # list
+#wt[1:length(wt)]
+```
+
+Then we use cross table to find the various combinations that already exist in the data and arrange them. It can be seen from the results that most of the combinations are false. Only six combinations are true which means that in this social network, they are the nodes could connect with the other clusters, people in combination have relationship and it helps to connect the different groups. Finally, we plot the graph of the subgroup, although the sizes of the six clusters are different, including the number of nodes and the degree of connection. The degree of connection between the second and third clusters is the largest in the entire community, because there are many two-way relationships, such as Violet and Alejandra both play relatively important roles in their respective sub-communities.
+
+```{r echo=FALSE, fig.align = 'center'}
+set.seed(5)
+plot(wt, g, edge.arrow.size=.4, 
+     vertex.size = 14, 
+     vertex.label.font=0.2,
+     vertex.label.cex = 0.6)
+```
+
+We also use dendrogram to express the structure of the community and the degree of connection. But cluster 6 has little or no relationship with the entire community structure, although they are connected to each other. The reason may be due to the incompleteness of the data and the reliability of the source, because we collected it through the survey. However, the community structure described by subgroup and the value of modularity can prove that our network is relatively strong.    
+
+```{r echo=FALSE, fig.align='center', warning=FALSE}
+dend <- as.dendrogram(wt, use.modularity=FALSE)
+plot_dendrogram(wt, 
+                mode = "hclust", 
+                rect=6, 
+                colbar = c("red", "blue"))
+```
+
+# The Constraint Function vs. Betweenness Function
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(kableExtra)
+
+df2 <- data.frame(Constraint=constraint(g),
+                 Betweenness=betweenness(g),
+                 Internationality=ifelse(df$if_international == "Domestic","Domestic","International"))
+
+kbl(head(df2,12)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+```
+
+When referring to *betweenness* centralities and the constraints of the nodes that make up the network, each have different meanings. Betweenness centrality locates the brokers with respect to all the other actors in the network. Burt’s constraint however, is a local measure of brokerage based on the level of triadic closure. Referring to the nodes, students with high a betweenness centrality intern have a low constraint. Inversely, students with a high constraint have a low betweenness centrality. This makes sense, as nodes such as *GMAD*, *Guan*, and *Gin* are very constrained to the extent that they have invested a significant portion of their resources (in this case class connections) back into a small number of students. These students are very limited in other possible class connections as they are all only connected with a small number of other students in the entire network. Thus, their high constraint leads to low betweenness as they represent students who are separated from their peers in the network. This concept is supported by the following graph visualizing this relationship:
+
+```{r echo=FALSE, fig.align='center', fig.height=2, fig.width=4, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(df2, aes(x=Constraint, y=Betweenness)) + 
+  geom_point() + 
+  labs(title="Relationship Between Constraint and Betweenness")
+```
+
+Burt defines social capital as a function of brokerage opportunities. Supporting his article, “Structural Holes and Good Ideas,” families who act as bridges between clusters are the least constrained amongst the network and the most powerful brokers. For example, students such as *Alejandra Taboada* and *Violet*	bridge the gap between the main network and students such as *ND*, *YL*, and many more who lack numerous class relationships with other students. Since their class connections are diversified, *Alejandra Taboada* and *Violet* are not constrained to one class connection. Rather, their multiple bridging relations signify their social power as students to connect with, as well as for other characteristics such as internationality and gender.
+
+# The Brokerage Function
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+detach("package:igraph", unload=TRUE)
+library(sna)
+library(intergraph)
+net <- asNetwork(g) # Converts "g" igraph object to a Network Object
+
+b <- brokerage(net, cl=get.vertex.attribute(net, "party"))
+
+# display those with total > 0
+b <- data.frame(b$raw.nli)
+b[b$t>0,]
+```
+
+According to “Structures of Mediation: A Formal Approach to Brokerage in Transaction Networks” by Gould and Fernandez, a brokerage is a process by which intermediary actors facilitate transactions between other actors lacking access to or trust in one another. A broker within a network is a node with high betweenness centrality and/or low Burt’s constraint score, which both, bridges the gap between disconnected stakeholders as well as receives/sends many relational ties out to the other stakeholders. Based on the Brokerage Function from the class data, all impactful nodes belong within the same subgroups and are categorized as coordinator roles. In this fashion, coordinators oversee the nodes of their clusters similar to how real-world coordinators coordinate the administration of a brokerage. Specifically, *Violet* and *Alejandra Taboada* assume the role more often than any other student. Even based on network location, the students are located at centers of clusters, thus their ability to facilitate actions between nodes is heightened.
+
+In this network, social capital exists where students have an advantage because of their location within the network structure. Referencing Burt’s article, nodes who are very connected across different groups are more familiar with alternative ways of thinking than nodes who are less connected. Amongst the students, those who have a higher total number of times as a coordinator resemble entities who are impactful members of their own subgroups as well as neighboring ones, thus more connected overall. For example, *Violet* maintains a large amount of social capital solely based on the fact that she is a broker with several connections with other subgroups of students. In this sense, *Violet*'s dense student and class-related relationships, while also acting as a bridge between subgroups, increase her social power amongst students within GW's Business Analytics major. Interestingly, the students who act as brokers and have the highest social capital are also of international descent. While the exact reason why this feature is unknown, it may be linked to the number of international students in the Business Analytics major with similar ethnicities which supports homophilic subgroups with brokers, such as *Violet* or *Alejandra Taboada*, connecting them together.  
+
+# Exponential Random Graph Models (ERGM)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(statnet)
+library(ergm)
+#packageVersion("ergm")
+
+# check for edges and triads
+summary(net ~ edges + triangle)
+```
+
+As the summary shown above, we have 58 edges and 18 triad in our network. Before testing for homophily, we run a null model, which is the simplest Exponential Random Graph Models (ERGM) with only the edges term. Shown below, the edge has a Estimate of -3.4058. That is to say the log-odds that a edge is present is -3.4058*1. The corresponding probability is obtained by taking the inverse logit -- exp(-3.4058)/(1 + exp(-3.4058)) = 0.032 -- the 0.032 is the density of the network. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Null model exp(-3.4058)/(1 + exp(-3.4058)) # = 0.032 = edge density
+set.seed(5)
+null.model <- ergm(net ~ edges)
+summary(null.model)
+```
+
+We use mixing matrix to examine the number of connected dyads for each possible combination of levels for categorical node attribute if_international. Out of total 58 edges, large number of edge clustered within the Domestic-Domestic and International-International section of the mixing matrix, 17 edges and 30 edges respectively. Based on the exploratory analysis and before fitting the model, we make the assumption that if_international attribute has a significant impact on the friendship formation.
+
+```{r echo=FALSE, warning=FALSE, results='asis'}
+kable(mixingmatrix(net,"if_intl"))
+```
+
+We want to look at the attribute data and see how those attribute impact the formation of friendship. We used edges, graduation_year, if_international, gender, and origin to fit a ERGM model (the details of fit shown below). graduation_year and origin are categorical, while if_international and gender are considered as binary in this data set. Not surprisingly, if_international and origin are statistically significant, both with a p-value smaller than 0.05. The coefficients in ERGM represent the change in the (log-odds) likelihood of a edge for a unit change in a predictor. A interpretation of 1.03975 of nodematch.if_international.International can be -- holding all other variable constant, a person being international student will change the odds of the dyad formation by a factor of e^1.03975 = 2.8285 over the reference level. The corresponding probability of tie formation is 0.7388 or 73.88%. This support our hypothesis that international student are more likely to gather with other international.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#list.vertex.attributes(net) #list all attribute network has
+
+# Test for homophily
+set.seed(5)
+diffhomophily <- ergm(net ~ edges + #nodecov for numeric which we don't have
+      nodefactor( 'grad_yr' ) + #categorical
+      nodematch('if_intl', diff=T, keep=2) + #binary homophily
+      nodematch('gender', diff=T, keep=2) +
+      nodematch('origin') ) #homophily
+summary(diffhomophily)
+```
+
+Based on the formula, we can predict the connecting probability of two students. For instance, if we have 2 following student:
+
+Stdnt | grad_yr | if_intl | gender | origin 
+------| ------- | ------- | ------ |-------
+1 | 2024 | International | Female | China 
+2 | 2024 | International | Female | China 
+2 | 2024 | International | Female | Honduras
+4 | 2024 | Domestic | Female | United States 
+
+While graduation year and gender remain unchanged. the probability of Student 1 connect to Student 2 is 11.16%, Student 1 to Student 3 is 3.21%, and Student 1 to Student 4 is only 1.16%. This example illustrate how student form friendship with other students within Business Analytics. And it again tells that international students are more likely to make connections with people from their home country.
+
+```{r include=FALSE}
+#Stdnt1-2
+plogis(coef(diffhomophily)[['edges']] + 
+         coef(diffhomophily)[['nodefactor.grad_yr.2024']] +
+         coef(diffhomophily)[['nodematch.if_intl.International']] + 
+         coef(diffhomophily)[['nodematch.origin']])
+
+#Stdnt1-3
+plogis(coef(diffhomophily)[['edges']] + 
+         coef(diffhomophily)[['nodefactor.grad_yr.2024']] +
+         coef(diffhomophily)[['nodematch.if_intl.International']])
+
+#Stdnt1-4
+plogis(coef(diffhomophily)[['edges']] + 
+         coef(diffhomophily)[['nodefactor.grad_yr.2024']])
+```
+
+# Conclusion    
+
+Based on the analysis of the friendship patterns among Business Analytics majors at GW, it was found that international students were more likely to form connections with people from their home country. The degree distribution and centrality measures showed that Alejandra Taboada and Violet were the most popular and influential students in the network, while LTB had the highest closeness centrality, indicating his ability to quickly influence the entire network. The analysis of subgroups, roles, brokerage, and social capital within the network revealed the presence of strong and weak ties, as well as bridging and bonding social capital. The statistical models and interpretations tested for homophily and found that there was a relationship between a domestic student network and an international student network based on citizenship, and that it was possible to predict the probability of a connection in a network based on organizations using a network based on majors.    
+
+Overall, these results provide a comprehensive understanding of the friendship patterns among Business Analytics majors at the university and the factors that influence the formation of these friendships. The findings of this study have important implications for educators and faculty seeking to foster a more inclusive and diverse learning environment. By understanding the dynamics of friendship formation among international and domestic students, educators and faculty members can develop strategies to promote cross-cultural friendships and facilitate the integration of international students into the university community.It is worth noting, however, that the results of this study should be interpreted with caution due to the potential limitations of the survey. Not every student participated in the survey, which could have resulted in a less accurate representation of the results. Additionally, the use of self-reported data may be subject to limitations in the validity of the responses. Therefore, it is important to consider these limitations when interpreting the results of the study.   
+
+In conclusion, the analysis of the friendship patterns among Business Analytics majors at a university provides valuable insights into the dynamics of friendship formation among international and domestic students and the factors that influence these friendships. The results of this study can inform strategies for fostering a more inclusive and diverse learning environment and promoting cross-cultural friendships at the university.   
+
