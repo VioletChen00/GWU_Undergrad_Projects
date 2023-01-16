@@ -1,0 +1,623 @@
+---
+title: "DNSC4219_ProjectDraft2"
+author: "Violet Chen"
+date: "4/22/2022"
+output: html_document
+---
+
+```{r}
+#==============DailyDelhiClimateTrain.csv=============
+#Read data
+all=read.csv("DailyDelhiClimateTrain.csv",header=TRUE)
+
+#Modify Dataframe
+all$date <- as.Date(all$date)
+
+library(tidyverse)
+library(lubridate)
+library(forecast)
+
+all <- all %>% mutate(year = year(date), month = month(date), day = day(date))
+all <- all %>% mutate(week = c(rep(c(2,3,4,5,6,7,1), length(date)/7), 2,3,4,5,6,7))
+attach(all)
+
+head(all)
+```
+
+```{r}
+#time series plot of meantemp: exhibiting seasonality
+plot.ts(meantemp, col="blue")
+```
+
+```{r}
+# box plots of meantemp to further investigate the seasonal behavior: seasonality exist
+boxplot(meantemp~all$month,xlab="Month",ylab="Monthly Temp",col="blue")
+```
+
+```{r}
+#ACF of meantemp: The ACF decays slowly, the series is non-stationary
+acf(meantemp,col="blue", lag = 100)
+```
+
+```{r}
+#First difference of the series: ACF cut off, lags beyond 2se -> stationary, not WN, not RW
+acf(diff(meantemp,lag=1),col="blue", lag = 100)
+```
+
+```{r}
+#Create training sample
+n_meantemp = meantemp[1:1250]
+n_month=month[1:1250]
+
+time = seq(1, length(meantemp))
+t = time[1:1250]
+```
+
+```{r}
+#==============2.1 Seasonal Dummies and Trend by Month=============
+#Create dummy variables
+n=length(meantemp)
+m1=rep(0,n)
+m2=rep(0,n)
+m3=rep(0,n)
+m4=rep(0,n)
+m5=rep(0,n)
+m6=rep(0,n)
+m7=rep(0,n)
+m8=rep(0,n)
+m9=rep(0,n)
+m10=rep(0,n)
+m11=rep(0,n)
+m12=rep(0,n)
+
+#Manually create dummy variable by assigning 1 and 0 accordingly
+for (i in 1:n){
+  if (month[i]==1) m1[i]=1 else m1[i]=0
+  if (month[i]==2) m2[i]=1 else m2[i]=0
+  if (month[i]==3) m3[i]=1 else m3[i]=0
+  if (month[i]==4) m4[i]=1 else m4[i]=0
+  if (month[i]==5) m5[i]=1 else m5[i]=0
+  if (month[i]==6) m6[i]=1 else m6[i]=0
+  if (month[i]==7) m7[i]=1 else m7[i]=0
+  if (month[i]==8) m8[i]=1 else m8[i]=0
+  if (month[i]==9) m9[i]=1 else m9[i]=0
+  if (month[i]==10) m10[i]=1 else m10[i]=0
+  if (month[i]==11) m11[i]=1 else m11[i]=0
+  if (month[i]==12) m12[i]=1 else m12[i]=0
+}
+
+#Create training sample
+n_m2 = m2[1:1250]
+n_m3 = m3[1:1250]
+n_m4 = m4[1:1250]
+n_m5 = m5[1:1250]
+n_m6 = m6[1:1250]
+n_m7 = m7[1:1250]
+n_m8 = m8[1:1250]
+n_m9 = m9[1:1250]
+n_m10 = m10[1:1250]
+n_m11 = m11[1:1250]
+n_m12 = m12[1:1250]
+```
+
+```{r}
+#Seasonal Model using <first month> as the reference                    
+fitDummy=lm(n_meantemp~t+n_m2+n_m3+n_m4+n_m5+n_m6+n_m7+n_m8+n_m9+n_m10+n_m11+n_m12)
+summary(fitDummy)
+```
+
+```{r}
+#Seasonal Model using <first month> as the reference but with as.factor (same result above)
+fitDummy2<-lm(n_meantemp~t+as.factor(n_month))
+summary(fitDummy2)
+accuracy(fitDummy2)
+```
+
+```{r}
+#==============2.1 Cyclical Trend=============
+# Periodogram for Sales Series using obs. of training as n, n = 1250
+library(TSA)
+
+#removing trend and get periodogram
+detrend<-lm(n_meantemp~t)
+prdgrm=periodogram(detrend$residuals,col="blue", main = 'Periodogram Using All Data')
+period=1/prdgrm$freq
+
+#plot periodogram
+par(mfrow=c(1,2))
+periodogram(detrend$residuals,col="blue")
+plot(period,prdgrm$spec, type="h",col="blue",ylab="Peridogram",lwd=2)
+```
+
+```{r}
+#Show 1:20 harmonics
+frequency=prdgrm$freq
+amplitude=prdgrm$spec 
+
+pg=cbind(period,frequency,amplitude)
+pg[1:20,]
+```
+
+```{r}
+#creating the sine and cosine pair of harmonics 3,4,7 | n = 1250
+n = length(n_meantemp)
+cos3=cos(2*pi*(3/n)*t)
+sin3=sin(2*pi*(3/n)*t)
+
+cos4=cos(2*pi*(4/n)*t)
+sin4=sin(2*pi*(4/n)*t)
+
+cos7=cos(2*pi*(7/n)*t)
+sin7=sin(2*pi*(7/n)*t)
+
+#additional
+cos2=cos(2*pi*(2/n)*t)
+sin2=sin(2*pi*(2/n)*t)
+
+cos5=cos(2*pi*(5/n)*t)
+sin5=sin(2*pi*(5/n)*t)
+
+cos6=cos(2*pi*(6/n)*t)
+sin6=sin(2*pi*(6/n)*t)
+#fit cyclical model
+fitCyclical<-lm(n_meantemp~t+cos3+sin3+cos4+sin4+cos7+sin7)
+summary(fitCyclical)
+accuracy(fitCyclical)
+```
+
+```{r}
+#test if more pairs lead to lower MAPE on hold-out
+fitCyclical256<-lm(n_meantemp~t+cos3+sin3+cos4+sin4+cos7+sin7+cos2+sin2+cos5+sin5+cos6+sin6)
+summary(fitCyclical256)
+
+n = length(n_meantemp) #periodogram using 1250 obs
+time_n=c(1251:1462)
+
+cos3_n=cos(2*pi*(3/n)*time_n)
+sin3_n=sin(2*pi*(3/n)*time_n)
+
+cos4_n=cos(2*pi*(4/n)*time_n)
+sin4_n=sin(2*pi*(4/n)*time_n)
+
+cos7_n=cos(2*pi*(7/n)*time_n)
+sin7_n=sin(2*pi*(7/n)*time_n)
+
+cos2_n=cos(2*pi*(2/n)*time_n)
+sin2_n=sin(2*pi*(2/n)*time_n)
+
+cos5_n=cos(2*pi*(5/n)*time_n)
+sin5_n=sin(2*pi*(5/n)*time_n)
+
+cos6_n=cos(2*pi*(6/n)*time_n)
+sin6_n=sin(2*pi*(6/n)*time_n)
+pred_Cyclical256=predict(fitCyclical256, data.frame(t=time_n,cos3=cos3_n,sin3=sin3_n,
+                               cos4=cos4_n,sin4=sin4_n,cos7=cos7_n,sin7=sin7_n,
+                               cos2=cos2_n,sin2=sin2_n,
+                               cos5=cos5_n,sin5=sin5_n,cos6=cos6_n,sin6=sin6_n),
+                               interval="prediction")            
+
+MAPE_Cyclical256l=mean(abs(meantemp[1251:1462]-pred_Cyclical256[,1])/meantemp[1251:1462] )
+MAPE_Cyclical256l
+```
+
+```{r}
+#==============2.2 Fit & Hold-out Sample for Seasonal Dummies and Trend by Month=============
+#Fit seasonal dummy model
+summary(fitDummy)
+
+# training sample accuracy
+MAPE_Dummy_train=mean(abs(n_meantemp-fitDummy$fitted.values)/n_meantemp)
+paste("Dummy model MAPE for training sample: ", MAPE_Dummy_train*100)
+
+RSQ_Dummy_train=cor(n_meantemp,fitDummy$fitted.values)^2
+RSQ_Dummy_train
+
+#MAPE for Seasonal Dummies and Trend: fitDummy2 used here
+pred_Dummy=predict(fitDummy2, data.frame(t=c(1251:1462), n_month=month[1251:1462]), interval="prediction")
+MAPE_Dummy=mean(abs(meantemp[1251:1462]-pred_Dummy[,1])/meantemp[1251:1462])
+paste("Dummy model MAPE for hold-out sample: ", MAPE_Dummy*100)
+```
+
+```{r}
+#Actual Versus Predicted for Monthly Dummy
+plot.ts(meantemp[1:1250], type="b",col="blue",ylab="meantemp",lwd=2,main="Actual Versus Predicted for Monthly Dummy")
+lines(predict(fitDummy),col="red",lwd=2)
+```
+
+```{r}
+#==============2.2 Fit & Hold-out Sample for Cyclical Model=============
+#Fit cyclical model
+summary(fitCyclical)
+
+# training sample accuracy
+MAPE_Cyclical_train=mean(abs(n_meantemp-fitCyclical$fitted.values)/n_meantemp)
+paste("Cyclical model MAPE for training sample: ",  round(MAPE_Cyclical_train*100, 4), "%")
+
+RSQ_Cyclical_train=cor(n_meantemp,fitCyclical$fitted.values)^2
+RSQ_Cyclical_train
+
+#MAPE of Cyclical Model
+n = length(n_meantemp) #periodogram using 1250 obs
+time_n=c(1251:1462)
+
+cos3_n=cos(2*pi*(3/n)*time_n)
+sin3_n=sin(2*pi*(3/n)*time_n)
+
+cos4_n=cos(2*pi*(4/n)*time_n)
+sin4_n=sin(2*pi*(4/n)*time_n)
+
+cos7_n=cos(2*pi*(7/n)*time_n)
+sin7_n=sin(2*pi*(7/n)*time_n)
+
+pred_Cyclical=predict(fitCyclical, data.frame(t=time_n,cos3=cos3_n,sin3=sin3_n,
+                               cos4=cos4_n,sin4=sin4_n,cos7=cos7_n,sin7=sin7_n),
+                               interval="prediction")            
+
+MAPE_Cyclical=mean(abs(meantemp[1251:1462]-pred_Cyclical[,1])/meantemp[1251:1462] )
+paste("Cyclical model MAPE for hold-out sample: ", round(MAPE_Cyclical*100, 4), "%")
+```
+
+```{r}
+#Actual Versus Predicted for Cyclical Model
+plot.ts(meantemp[1:1250], type="b",col="blue",ylab="meantemp",lwd=2,main="Actual Versus Predicted for Cyclical Model")
+lines(predict(fitCyclical),col="red",lwd=2)
+```
+
+```{r}
+#==============2.3 Residual for Seasonal Dummies and Trend by Month=============
+#ACF and PACF of Seasonal Dummies and Trend Residual
+par(mfrow=c(1,2))
+acf(fitDummy$residuals,main="ACF of Seasonal Dummies and Trend Residuals",col="blue",lag=100)
+pacf(fitDummy$residuals,main="PACF of Seasonal Dummies and Trend Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test of seasonal dummies and trend residuals: not WN
+Box.test(fitDummy$residuals, lag=100)
+```
+
+```{r}
+#==============2.3 Residual for Cyclical Model=============
+#ACF & PACF of Cyclical Model Residual
+par(mfrow=c(1,2))
+acf(fitCyclical$residuals,main="ACF of Cyclical Model Residuals",col="blue",lag=100)
+pacf(fitCyclical$residuals,main="PACF of Cyclical Model Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test of cyclical model: not WN
+Box.test(fitCyclical$residuals, lag=100)
+```
+
+```{r}
+#compare residuals
+Box.test(fitDummy$residuals, lag=100)
+Box.test(fitCyclical$residuals, lag=100)
+```
+
+```{r}
+#compare ACF
+par(mfrow=c(1,2))
+acf(fitDummy$residuals,main="ACF of Dummies Trend Residuals",col="blue",lag=100)
+acf(fitCyclical$residuals,main="ACF of Cyclical Trend Residuals",col="blue",lag=100)
+```
+
+```{r}
+#==============3.1 Correlation Analysis and Scatter Plots=============
+#Plots and Correlation Estimates: exclude meanpressure when fit model due to little correlation,  
+data <- all[,2:5]
+pairs(data,lower.panel = NULL,col="blue")
+```
+
+```{r}
+#overlay time series plot of meantemp, humidity, wind_speed
+ts.plot(data[,1:3],gpars = list(col=rainbow(8)))
+```
+
+```{r}
+# plotting the correlation heatmap1
+install.packages("corrplot")
+library(corrplot)
+library(RColorBrewer)
+
+data <- all[,2:5]
+corrplot(cor(data), type="lower", order="hclust",
+        col=brewer.pal(n=8, name="PiYG"))
+```
+
+```{r}
+# plotting the correlation heatmap2
+install.packages("reshape2")
+library(reshape2)
+library(ggplot2)
+
+data <- all[,2:5]
+ggplot(data = melt(round(cor(data),2)), type="lower", aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + geom_text(aes(Var2, Var1, label = value), color = "white", size = 4)
+```
+
+```{r}
+#==============3.2 Fit & Hold-out Sample for Regression Models=============
+#Multivariate fit
+n_humidity <- data$humidity[1:1250]
+n_wind_speed <- data$wind_speed[1:1250]
+
+#Fit regression models
+fitReg = lm(n_meantemp~n_humidity+n_wind_speed)
+```
+
+```{r}
+#Fit for regression models
+summary(fitReg)
+
+# training sample accuracy
+MAPE_Reg_train=mean(abs(n_meantemp-fitReg$fitted.values)/n_meantemp)
+paste("Regression model MAPE for training sample:",  round(MAPE_Reg_train*100, 4), "%")
+
+#Hold-out for regression models
+pred_Reg=predict(fitReg, data.frame(n_humidity=humidity[1251:1462], n_wind_speed=wind_speed[1251:1462]),interval="prediction")         
+MAPE_Reg=mean(abs(meantemp[1251:1462]-pred_Reg[,1])/meantemp[1251:1462] )
+paste("Regression model MAPE for hold-out sample:", round(MAPE_Reg*100, 4), "%")
+```
+
+```{r}
+library(car)
+vif(fitReg)
+```
+
+```{r}
+#Actual Versus Predicted for Regression Model
+plot.ts(meantemp[1:1250], type="b",col="blue",ylab="meantemp",lwd=2,main="Actual Versus Predicted for Regression Model")
+lines(predict(fitReg),col="red",lwd=2)
+```
+
+```{r}
+#==============3.3 Residual for Regression Models=============
+#ACF & PACF of Regression Models
+par(mfrow=c(1,2))
+acf(fitReg$residuals,main="ACF of Regression Model Residuals",col="blue",lag=100)
+pacf(fitReg$residuals,main="PACF of Regression Model Residuals",col="blue",lag=100)
+```
+
+```{r}
+acf(fitReg$residuals,main="ACF of Regression Model Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test of regression model: not WN
+Box.test(fitReg$residuals, lag=100)
+```
+
+```{r}
+#what if we fit a dummy with IARMA(1,1)
+par(mfrow=c(1,2))
+acf(diff(fitDummy$residuals),col="blue",lag=100)
+pacf(diff(fitDummy$residuals),col="blue",lag=100)
+
+x = cbind(n_m2,n_m3,n_m4,n_m5,n_m6,n_m7,n_m8,n_m9,n_m10,n_m11,n_m12)
+fitDummyIARMA11 = Arima(n_meantemp, order = c(1,1,1), xreg = x, include.constant = T) 
+fitDummyIARMA11
+accuracy(fitDummyIARMA11) #MAPE on training no big improve
+
+Box.test(fitDummyIARMA11$residuals, lag=100) #WN under 5%CI
+
+hold_meantemp = meantemp[1251:1462]
+hold_x = cbind(n_m2 = m2[1251:1462],n_m3 = m3[1251:1462],n_m4 = m4[1251:1462],n_m5 = m5[1251:1462],
+               n_m6 = m6[1251:1462],n_m7 = m7[1251:1462],n_m8 = m8[1251:1462],n_m9 = m9[1251:1462],
+               n_m10 = m10[1251:1462],n_m11 = m11[1251:1462],n_m12 = m12[1251:1462])
+
+hold_fitDummyIARMA11 = Arima(hold_meantemp,model=fitDummyIARMA11, xreg = hold_x)
+
+# accuracy measures for hold out sample
+accuracy(hold_fitDummyIARMA11) #MAPE on Hold-out little improve
+
+par(mfrow=c(1,2))
+acf(fitDummyIARMA11$residuals,col="blue",lag=100)
+pacf(fitDummyIARMA11$residuals,col="blue",lag=100)
+```
+
+```{r}
+#==============4.1 Analysis and Modeling of Seasonal Dummies and Trend Residuals=============
+#Observe seasonal dummies and trend residuals: ACF decrease quickly and PACF cut off at lag 1 -> AR(1)
+par(mfrow=c(1,2))
+acf(fitDummy$residuals,col="blue",lag=100)
+pacf(fitDummy$residuals,col="blue",lag=100)
+```
+
+```{r}
+#Fit seasonal dummies trend + AR(1) in error term
+x = cbind(t, n_m2,n_m3,n_m4,n_m5,n_m6,n_m7,n_m8,n_m9,n_m10,n_m11,n_m12)
+fitDummyAR1 = Arima(n_meantemp, order = c(1,0,0), xreg = x, include.constant = T) 
+fitDummyAR1
+accuracy(fitDummyAR1)
+```
+
+```{r}
+#hold-out sample for seasonal dummies trend + AR(1)
+hold_meantemp = meantemp[1251:1462]
+hold_x = cbind(t = time[1251:1462], n_m2 = m2[1251:1462],n_m3 = m3[1251:1462],n_m4 = m4[1251:1462],n_m5 = m5[1251:1462],
+               n_m6 = m6[1251:1462],n_m7 = m7[1251:1462],n_m8 = m8[1251:1462],n_m9 = m9[1251:1462],
+               n_m10 = m10[1251:1462],n_m11 = m11[1251:1462],n_m12 = m12[1251:1462])
+
+hold_fitDummyAR1 = Arima(hold_meantemp,model=fitDummyAR1, xreg = hold_x)
+
+# accuracy measures for hold out sample
+accuracy(hold_fitDummyAR1)
+```
+
+```{r}
+#Seasonal dummies and trend + AR(1) residuals: ACF inside 2s.e. practically
+par(mfrow=c(1,2))
+acf(fitDummyAR1$residuals,col="blue",lag=100)
+pacf(fitDummyAR1$residuals,col="blue",lag=100)
+```
+```{r}
+acf(fitDummyAR1$residuals,col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test of Seasonal dummies and trend + AR(1) model: WN under 10% CI
+Box.test(fitDummyAR1$residuals, lag=100)
+```
+
+```{r}
+acf(fitCyclical$residuals,col="blue",lag=100)
+```
+
+```{r}
+#==============4.1 Analysis and Modeling of Cyclical Trend Residuals=============
+#Observe cyclical trend residuals: ACF decrease slowly -> not stationary -> diff.
+par(mfrow=c(1,2))
+acf(fitCyclical$residuals,col="blue",lag=100)
+pacf(fitCyclical$residuals,col="blue",lag=100)
+```
+
+```{r}
+#Cyclical trend with diff.
+x = cbind(cos3,sin3,cos4,sin4,cos7,sin7)
+fitCyclicalDiff = Arima(n_meantemp, order = c(0,1,0), xreg = x, include.constant = T) 
+fitCyclicalDiff
+accuracy(fitCyclicalDiff)
+```
+
+```{r}
+#Observe cyclical trend residuals: diff., ACF decrease quickly, PACF decrease quickly-> IARMA(1,1)
+par(mfrow=c(1,2))
+acf(fitCyclicalDiff$residuals,main="ACF of First Difference of Cyclical Residuals",col="blue",lag=100)
+pacf(fitCyclicalDiff$residuals,main="PACF of First Difference of Cyclical Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Cyclical trend + IARMA(1,1)
+x = cbind(cos3,sin3,cos4,sin4,cos7,sin7)
+fitARIMACyclicalDiff = Arima(n_meantemp, order = c(1,1,1), xreg = x, include.constant = T) 
+fitARIMACyclicalDiff
+accuracy(fitARIMACyclicalDiff)
+```
+
+```{r}
+#Observe cyclical trend + IARMA(1,1) residuals: ACF below 2 s.e. -> WN
+par(mfrow=c(1,2))
+acf(fitARIMACyclicalDiff$residuals,main="ACF of Cyclical Residuals with IARMA(1,1)",col="blue",lag=100)
+pacf(fitARIMACyclicalDiff$residuals,main="PACF of Cyclical Residuals with IARMA(1,1)",col="blue",lag=100)
+```
+
+```{r}
+acf(fitARIMACyclicalDiff$residuals,main="ACF of Cyclical Residuals with IARMA(1,1)",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test of cyclical trend + IARMA(1,1) residual p-value > 0.05 -> WN
+Box.test(fitARIMACyclicalDiff$residuals, lag=100)
+```
+
+```{r}
+#Cyclical trend + IARMA(1,1) - Testing hold-out sample accuracy
+hold_meantemp = meantemp[1251:1462]
+hold_x = cbind(cos3=cos3_n,sin3=sin3_n,cos4=cos4_n,sin4=sin4_n,cos7=cos7_n,sin7=sin7_n)
+hold_fitARIMACyclicalDiff = Arima(hold_meantemp,model=fitARIMACyclicalDiff, xreg = hold_x)
+
+# accuracy measures for hold out sample
+Box.test(fitARIMACyclicalDiff$residuals, lag=100)
+accuracy(hold_fitARIMACyclicalDiff)
+```
+
+
+```{r}
+#==============4.2 Analysis and Modeling of Regression Models Residuals=============
+#Observe regression residuals: ACF decrease slowly -> not stationary -> diff.
+par(mfrow=c(1,2))
+acf(fitReg$residuals,main="ACF of Regression model Residuals",col="blue",lag=120)
+pacf(fitReg$residuals,main="PACF of Regression model Residuals",col="blue",lag=120)
+```
+
+```{r}
+#Regression with diff. 
+x = cbind(n_humidity, n_wind_speed)
+          
+fitRegDiff = Arima(n_meantemp, order = c(0,1,0), xreg = x, include.constant = T) 
+fitRegDiff
+```
+
+```{r}
+#Observe regression with diff. residuals:
+par(mfrow=c(1,2))
+acf(fitRegDiff$residuals,main="ACF of First Diff Reg model Residuals",col="blue",lag=120)
+pacf(fitRegDiff$residuals,main="PACF of=First Diff Reg model Residuals",col="blue",lag=120)
+```
+
+```{r}
+#Fit regression + IARMA(2,1,1) model
+x = cbind(n_humidity, n_wind_speed)
+          
+fitARIMAReg = Arima(n_meantemp, order = c(2,1,1), xreg = x) 
+fitARIMAReg
+accuracy(fitARIMAReg)
+Box.test(fitARIMAReg$residuals, lag=100)
+```
+
+```{r}
+#what if we include n_meanpressure: insignificant
+n_meanpressure <- data$meanpressure[1:1250]
+x = cbind(n_humidity, n_wind_speed, n_meanpressure)
+          
+fitARIMAReg2 = Arima(n_meantemp, order = c(2,1,1), xreg = x) 
+fitARIMAReg2
+accuracy(fitARIMAReg2)
+Box.test(fitARIMAReg2$residuals, lag=100)
+```
+
+```{r}
+#Residual for regression + IARMA(2,1,1) model
+acf(fitARIMAReg$residuals,main="ACF of IARMA(2,1,1) + X models Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test for regression + IARMA(2,1,1) model: p-value > 0.01, WN under 10% CI
+Box.test(fitARIMAReg$residuals, lag=100)
+```
+
+```{r}
+#Regression + IARMA(2,1,1) models hold-out sample accuracy
+hold_meantemp = meantemp[1251:1462]
+hold_humidity = humidity[1251:1462]
+hold_wind_speed = wind_speed[1251:1462]
+hold_x = cbind(hold_humidity, hold_wind_speed)
+hold_fitARIMAReg=Arima(hold_meantemp,model=fitARIMAReg, xreg = hold_x)
+accuracy(hold_fitARIMAReg)
+```
+
+```{r}
+#==============4.3 ARIMA Models=============
+library(forecast)
+#both ACF and PACF of diff decrease quickly: IARMA(1,1)
+par(mfrow=c(1,2))
+acf(D_meantemp,col="blue", lag = 100)
+pacf(D_meantemp,col="blue", lag = 100)
+```
+
+```{r}
+#Fit IARMA(1,1,1)
+fitARIMA = Arima(n_meantemp, order = c(1,1,1)) 
+fitARIMA
+accuracy(fitARIMA)
+```
+
+```{r}
+#Residual for IARMA(1,1,1) model
+acf(fitARIMA$residuals,main="ACF of IARMA(1,1,1) Residuals",col="blue",lag=100)
+```
+
+```{r}
+#Box-Pierce test p-value > 0.05, we cannot reject that it is a WN. good
+Box.test(fitARIMA$residuals, lag=100)
+```
+
+```{r}
+#IARMA(1,1,1) hold-out sample accuracy
+fitARIMA
+accuracy(fitARIMA)
+Box.test(fitARIMA$residuals, lag=100)
+hold_fitARIMA=Arima(hold_meantemp,model=fitARIMA)
+accuracy(hold_fitARIMA)
+```
